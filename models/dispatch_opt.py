@@ -50,7 +50,6 @@ def battery_model(input_ts, input_scalar):
     m.P_c = pyo.Var(m.t, within=pyo.NonNegativeReals, doc='Charge power (MW)')
     m.S = pyo.Var(m.t, within=pyo.NonNegativeReals, doc='State of charge')
     m.P_m = pyo.Var(m.t, within=pyo.Reals, doc='Net Power (MW)')
-    # m.u = pyo.Var(m.t, within=pyo.Binary, doc="Charging vs Discharging")
 
     # Set constraints
 
@@ -116,7 +115,10 @@ def battery_model_no_eff(input_ts, input_scalar):
     """
     Create and solve a battery storage dispatch optimization model using Pyomo. Minimizes cost of 
     electricity procurement over the time horizon given LMP and load data with a mixed-integer linear program.
-    This model is robust to an assumption of 100% conversion efficiency
+    This model is robust to an assumption of 100% conversion efficiency. 
+
+    Note that this model is deprecated in favor of a linear model that removes the binary charging/discharging variable 
+    and significantly reduces solve time. See battery_model function for the linear version of this model.
 
     Parameters
     ----------
