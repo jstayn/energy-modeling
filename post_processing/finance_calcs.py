@@ -103,7 +103,6 @@ def calculate_profit(m, input_ts, finance_inputs):
     inflation_rate = finance_inputs['Inflation Rate (%)'].iloc[0]  # Yearly 
     nominal_discount_rate = (1 + real_discount_rate) * (1 + inflation_rate) - 1
     daily_discount_rate = (1 + nominal_discount_rate) ** (1/365) - 1
-    # monthly_discount_rate = (1 + nominal_discount_rate) ** (1/12) - 1
 
     # Financial Calculations
     # Note that this discounts everything back to the first day of the simulation. 
@@ -115,3 +114,89 @@ def calculate_profit(m, input_ts, finance_inputs):
 
     return df_results, npv_op_profit, daily_finances
 
+
+
+def calculate_system_cost_npv(finance_inputs):
+    """
+    Calculate the net present value (NPV) of system cost from financing inputs.
+
+    Required columns in ``finance_inputs``:
+    - 'Battery System Cost ($)'
+    - 'Loan APR (%)'
+    - 'Loan Term (yrs)'
+    - 'Real Discount Rate (%)'
+    - 'Inflation Rate (%)'
+
+    Parameters
+    ----------
+    finance_inputs : pandas.DataFrame
+        Financial input table with at least one row containing the required
+        columns.
+
+    Returns
+    -------
+    float
+        NPV of system cost based on a monthly cash-flow series where monthly
+        loan payments are discounted using an internal monthly discount rate
+        derived from real discount rate and inflation.
+    """
+
+    # Validate inputs 
+    required_cols = [
+        'Battery System Cost ($)',
+        'Loan APR (%)',
+        'Loan Term (yrs)',
+        'Real Discount Rate (%)',
+        'Inflation Rate (%)'
+    ]
+
+    missing_cols = [col for col in required_cols if col not in finance_inputs.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required finance_inputs columns: {missing_cols}")
+
+    # Extract and validate scalar inputs
+    system_cost = float(finance_inputs['Battery System Cost ($)'].iloc[0])
+    apr_pct = float(finance_inputs['Loan APR (%)'].iloc[0])
+    loan_term_years = float(finance_inputs['Loan Term (yrs)'].iloc[0])
+    real_discount_rate = float(finance_inputs['Real Discount Rate (%)'].iloc[0])
+    inflation_rate = float(finance_inputs['Inflation Rate (%)'].iloc[0])
+
+    if system_cost < 0:
+        raise ValueError("'Battery System Cost ($)' must be non-negative.")
+    if apr_pct < 0:
+        raise ValueError("'Loan APR (%)' must be non-negative.")
+    if loan_term_years <= 0:
+        raise ValueError("'Loan Term (yrs)' must be greater than 0.")
+
+    # Loan terms for payment calculation.
+    monthly_rate = apr_pct / 12.0
+    n_payments = int(round(loan_term_years * 12))
+
+    # Internal monthly discount rate derived from real + inflation.
+    annual_nominal_discount = (1 + real_discount_rate) * (1 + inflation_rate) - 1
+    monthly_discount_rate = (1 + annual_nominal_discount) ** (1 / 12) - 1
+
+    if monthly_rate == 0:
+        monthly_payment = system_cost / n_payments
+    else:
+        growth = (1 + monthly_rate) ** n_payments
+        monthly_payment = system_cost * (monthly_rate * growth) / (growth - 1)
+
+    # Cash-flow sign convention: initial principal inflow then loan-payment outflows.
+    cash_flows = np.concatenate(([system_cost], np.full(n_payments, -monthly_payment)))
+
+    np_npv = getattr(np, 'npv', None)
+    if np_npv is None:
+        try:
+            import numpy_financial as npf
+            np_npv = npf.npv
+        except ImportError as exc:
+            raise ImportError(
+                "np.npv is unavailable in this NumPy version. Install numpy-financial "
+                "or provide an np.npv-compatible implementation."
+            ) from exc
+
+    # Calculate NPV from the monthly cash-flow array.
+    npv_system_cost = float(np_npv(monthly_discount_rate, cash_flows))
+
+    return npv_system_cost
